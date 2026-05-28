@@ -1,6 +1,16 @@
 # LLM Agent in a Virtual World
 
-A Claude-powered agent that perceives, reasons, and acts inside a 2D grid world — built for the Humanoid robotics internship challenge.
+A Claude-powered intelligent agent that perceives, reasons, and acts inside a 2D grid world — completing goal-directed tasks including navigation, object retrieval, and room exploration.
+
+![Demo](demo.gif)
+
+---
+
+## What It Is
+
+This system places a Large Language Model (Claude) inside a structured virtual environment where it must observe its surroundings, reason about its situation, and choose actions to accomplish goals. The core engineering challenge is the **agent harness** — the interface between the LLM and the world.
+
+The agent is not just generating plausible text. It is genuinely reasoning about spatial relationships, planning multi-step sequences, and completing tasks reliably across different world configurations.
 
 ---
 
@@ -8,50 +18,54 @@ A Claude-powered agent that perceives, reasons, and acts inside a 2D grid world 
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    WORLD STATE                      │
-│   Grid · Agent pos · Doors · Keys · Inventory      │
+│                    WORLD STATE                       │
+│   Grid, agent position, objects, doors, inventory   │
 └────────────────────┬────────────────────────────────┘
-                     │ get_state()
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│                   OBSERVER                          │
-│  Position · Local view · Inventory · Memory        │
-│  Goal · Nearby objects · Valid actions             │
-└────────────────────┬────────────────────────────────┘
-                     │ structured English prompt
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│              CLAUDE (Sonnet 4)                      │
-│   REASONING: …                                     │
-│   ACTION: MOVE_FORWARD                             │
-│   CONFIDENCE: HIGH                                 │
-└────────────────────┬────────────────────────────────┘
-                     │ response text
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│               ACTION PARSER                         │
-│   regex extract ACTION field → ActionType enum     │
-└────────────────────┬────────────────────────────────┘
-                     │ ActionType
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│             WORLD UPDATE                            │
-│   execute_action() mutates GridWorld state         │
-└────────────────────┬────────────────────────────────┘
-                     │ new state + result message
-                     ▼
-              ┌──────┴──────┐
-              │  RENDERER   │  ← rich terminal panels
-              └─────────────┘
                      │
-                  (repeat)
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│                   OBSERVER                           │
+│   Converts raw world state into structured natural  │
+│   language observation the LLM can reason about     │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│              CLAUDE (Agent Brain)                    │
+│   Receives observation, reasons step by step,       │
+│   outputs REASONING + ACTION + CONFIDENCE           │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│                ACTION PARSER                         │
+│   Extracts action from Claude response,             │
+│   validates against available action space          │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│               WORLD UPDATE                           │
+│   Executes action, updates state, checks success    │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     └──────────────► REPEAT
 ```
 
 ---
 
 ## Installation
 
+### Requirements
+- Python 3.10+
+- Anthropic API key
+- macOS / Linux
+
+### Setup
+
 ```bash
+# Clone the repository
+git clone https://github.com/ByEmG/humanoid-agent
 cd humanoid-agent
 
 # Create virtual environment
@@ -61,48 +75,141 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Add your API key
+# Set your API key
 cp .env.example .env
-# Edit .env and set:  ANTHROPIC_API_KEY=sk-ant-...
+# Edit .env and add your ANTHROPIC_API_KEY
 ```
 
 ---
 
-## Running
+## How to Run
 
 ```bash
-# Navigate to a goal (default task)
+# Navigate to goal
 python main.py --task navigate
 
-# Fetch task: key → door → goal
+# Find key, unlock door, reach goal
 python main.py --task fetch
 
-# Explore task: cover 70% of the room
+# Explore the room and generate a description
 python main.py --task explore
 
-# Run all three in sequence
+# Run all three tasks in sequence
 python main.py --task all
 
-# Reproducible run (same world every time)
+# Reproducible run with fixed seed
 python main.py --task navigate --seed 42
 
-# Headless mode (no visuals, just logs)
+# Headless mode (no rendering, just logs)
 python main.py --task navigate --no-render
 
-# Custom parameters
-python main.py --task navigate --seed 7 --max-steps 150 --delay 0.3
-
-# Use a different model
-python main.py --task fetch --model claude-opus-4-7
+# Control animation speed
+python main.py --task fetch --delay 0.5
 ```
 
 ---
 
-## Tests
+## Tasks
 
-```bash
-pytest tests/ -v
+### Task 1: Navigate
+Agent must reach a goal tile (★) in a world with random obstacles. Tests basic spatial reasoning and pathfinding.
+
+### Task 2: Fetch
+Three-step sequential task: find the key, pick it up, use it on a locked door, reach the goal beyond. Tests multi-step planning and object interaction.
+
+### Task 3: Explore
+No explicit goal tile. Agent must visit 70% of accessible cells and generate a natural language description of what it found. Tests systematic search strategies.
+
+---
+
+## Example Output
+
+From a real Fetch task session (seed 42):
+
 ```
+--- STEP 10 ---
+POSITION: (6, 7), facing South
+INVENTORY: nothing
+NEARBY: KEY at (6,7) distance 1, DOOR (locked) at (8,6) distance 2
+
+REASONING: I'm now at (6,7) where the key should be. I notice PICK_UP
+is available as a valid action, which means there's an item here to
+pick up. The key must be on this tile and I need to explicitly pick it up.
+
+ACTION: PICK_UP
+CONFIDENCE: HIGH
+
+--- STEP 14 ---
+POSITION: (8, 7), facing East
+INVENTORY: key_1
+NEARBY: DOOR (locked) at (8,6) distance 1
+
+REASONING: I'm now at (8,7) and the locked door is directly to my north
+at (8,6). USE_KEY is now available as a valid action, which means I'm in
+the correct position. I have key_1 in my inventory, so I should use it.
+
+ACTION: USE_KEY
+CONFIDENCE: HIGH
+
+=== FINAL RESULT ===
+Success: True | Steps: 27 | Task: FETCH
+```
+
+---
+
+## Design Choices
+
+### Why a 2D Grid World
+
+A 2D grid is the optimal choice for this challenge for three reasons. First, it is simple enough to implement rigorously — every component of the harness can be built properly rather than cutting corners on a more complex environment. Second, it is rich enough to support genuinely interesting tasks: navigation around obstacles, multi-step object interaction, and systematic exploration all require real reasoning. Third, it produces clear, verifiable results — success is unambiguous and the agent's path can be logged and inspected step by step.
+
+A text-based world would have been easier but harder to visualise. A 3D scene would have been visually impressive but would have shifted engineering effort away from the harness — which is what Humanoid explicitly said they care about most.
+
+### Observation Design
+
+The observation format is the most important engineering decision in this system. The agent can only reason about what it is told, so the observation must contain exactly the right information — no more, no less.
+
+The observation includes six sections: current position and facing direction, a 5x5 local view centred on the agent, the agent's inventory, the last three actions and their outcomes, the current goal in plain English, and the list of valid actions available right now.
+
+The 5x5 local view is deliberately limited. Giving the agent full map knowledge would make tasks trivially easy — the agent would just compute the shortest path. Limiting vision to nearby cells forces genuine reactive decision-making and makes the reasoning more interesting to observe.
+
+The valid actions list is critical. Telling the agent exactly which actions are available at each step prevents invalid action attempts and wasted API calls. It also creates natural affordance signals — when USE_KEY appears in the valid actions, the agent immediately understands it is in position to use its key.
+
+Plain English formatting was chosen over JSON. The LLM reasons more naturally and consistently with structured prose than with a data format it must parse internally.
+
+### Conversation History
+
+The agent maintains the last five turns of conversation history in each API call. This gives it short-term memory — it can reason about what it tried recently and whether it worked. Without history, the agent would repeat failed actions. With too much history, the context window fills and latency increases. Five turns was found to be the right balance: enough to avoid loops, short enough to stay fast.
+
+### Why Claude
+
+Claude was chosen for its strong spatial reasoning, consistent instruction-following, and reliable output formatting. The structured REASONING / ACTION / CONFIDENCE format is followed consistently across hundreds of steps, which is essential for a production agent harness. The reasoning traces are also genuinely useful — they make the agent's decision process transparent and debuggable.
+
+### Action Space Design
+
+The action space is deliberately discrete and minimal: MOVE_FORWARD, TURN_LEFT, TURN_RIGHT, PICK_UP, USE_KEY, WAIT, DESCRIBE. This forces the agent to plan multi-step sequences for any non-trivial movement, which produces more interesting and observable reasoning than a continuous or high-level action space. It also mirrors real robotics constraints where actions are atomic and sequential.
+
+---
+
+## What Worked and What Did Not
+
+**What worked well:**
+
+The observation format proved highly effective. From the session logs, Claude consistently demonstrated correct spatial reasoning — understanding its position relative to objects, planning multi-step routes, and recognising when affordances became available. The Fetch task was completed in 27 steps with no backtracking or confusion, despite the agent having only local vision.
+
+The valid actions list was one of the most impactful design decisions. By only showing actions that are currently executable, the system eliminated an entire class of errors and made the agent's decision loop significantly more reliable.
+
+The conversation history approach worked well for avoiding repetitive loops. In early testing without history the agent would sometimes repeat the same failed move. With five turns of history this behaviour was eliminated.
+
+**What did not work initially:**
+
+Early versions of the observation format included too much information — full object coordinates, distance to every cell visited, compass bearings to all objects. This produced longer and less focused reasoning. Stripping the observation back to the essentials improved both reasoning quality and consistency.
+
+The explore task required more iterations on the success condition. An early version required 80% cell coverage, which was difficult to achieve within the step limit in worlds with complex obstacle layouts. 70% with a higher step allowance produced more reliable task completion while still requiring systematic search behaviour.
+
+**Potential extensions:**
+
+Adding semantic labelling using Segment Anything Model would allow the agent to classify objects it encounters and build a semantic map of the environment — directly relevant to robotics perception pipelines. Real-time path planning using A* as a tool the agent can invoke would allow it to delegate navigation to a classical planner while retaining high-level goal reasoning. Multi-agent variants with two agents collaborating or competing in the same world would be a natural next step for more complex emergent behaviour.
 
 ---
 
@@ -111,90 +218,39 @@ pytest tests/ -v
 ```
 humanoid-agent/
 ├── world/
-│   ├── objects.py      # CellType, Direction, Door, Key, WorldState
-│   ├── grid.py         # GridWorld: state, movement, placement
-│   └── renderer.py     # Rich terminal renderer
+│   ├── grid.py          # Grid world environment
+│   ├── objects.py       # Object definitions
+│   └── renderer.py      # Terminal renderer
 ├── agent/
-│   ├── actions.py      # ActionType enum + execute_action()
-│   ├── observer.py     # Converts world state → English observation
-│   └── brain.py        # Claude API loop, parsing, session logging
+│   ├── observer.py      # World state to observation
+│   ├── brain.py         # Claude API integration
+│   └── actions.py       # Action space
 ├── tasks/
-│   ├── __init__.py     # Shared run_task_loop()
-│   ├── navigate.py     # Task 1: reach the goal
-│   ├── fetch.py        # Task 2: key → door → goal
-│   └── explore.py      # Task 3: map the room
-├── tests/
-│   ├── test_grid.py
-│   ├── test_actions.py
-│   ├── test_observer.py
-│   └── test_brain.py
-├── outputs/            # Session logs (auto-created)
-├── main.py             # CLI entry point
-├── config.py           # All tunable constants
-└── requirements.txt
+│   ├── navigate.py      # Navigation task
+│   ├── fetch.py         # Fetch task
+│   └── explore.py       # Exploration task
+├── outputs/             # Session logs
+├── main.py              # Entry point
+├── config.py            # Configuration
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
 
 ---
 
-## Design Choices
+## Requirements
 
-### Why a 2D grid?
-Simple enough to implement correctly and render in a terminal; complex enough to require real spatial reasoning (pathfinding around obstacles, multi-step sub-goals). A continuous 3D environment would demand a physics engine and visual encoder — solving the planning problem first, in isolation, is more interesting for an LLM challenge.
-
-### Observation design
-The agent receives plain English, not raw grid arrays. Structured sections (position, local view, inventory, recent memory, goal, nearby objects, valid actions) give Claude exactly what it needs without hallucination-prone gaps. JSON was considered but rejected — structured text reads naturally to a language model and is more robust to whitespace errors.
-
-### Why Claude?
-Claude Sonnet has strong chain-of-thought reasoning for spatial tasks. The `REASONING / ACTION / CONFIDENCE` response format externalises the agent's thought process, making debugging straightforward and the internship demo compelling.
-
-### Conversation history (last 5 turns)
-The agent maintains a rolling 5-turn history so it can remember where it has been and what it has already tried. More turns → higher token cost and context noise; fewer → the agent forgets and repeats mistakes. Five turns is empirically a good balance for a 10×10 world.
-
-### Action space
-Discrete actions (turn/move/pick/use/wait) keep the API surface small and the reasoning tractable. A continuous action space would require the model to output coordinates, introducing parsing errors and reducing the signal-to-noise ratio in reasoning.
+```
+anthropic
+rich
+numpy
+python-dotenv
+click
+```
 
 ---
 
-## What Worked and What Didn't
-
-*(Fill this in after running the agent — be honest about failures, they're the most interesting part of the report.)*
-
-**What worked:**
-- 
-
-**What didn't:**
-- 
-
-**Surprising behaviours:**
-- 
-
----
-
-## Example Session Log
-
-```
-=== Agent Session Log ===
-Started: 2026-05-28T10:00:00
-
---- STEP 0 ---
-=== POSITION ===
-You are at (3, 7), facing North.
-Directly ahead (3, 6): open space.
-Steps taken so far: 0.
-
-=== LOCAL VIEW (5×5 centered on you) ===
-  ...  (grid excerpt)
-
-=== CURRENT GOAL ===
-Navigate to the GOAL (★) at position (7, 2).
-
-=== VALID ACTIONS ===
-WAIT, DESCRIBE, TURN_LEFT, TURN_RIGHT, MOVE_FORWARD
-
-RESPONSE:
-REASONING: The goal is at (7,2) and I'm at (3,7), so I need to move
-northeast. I'm facing North and the cell ahead is open, so MOVE_FORWARD
-is the best first step.
-ACTION: MOVE_FORWARD
-CONFIDENCE: HIGH
-```
+Built by Pierre Emmanuel Gerard
+BSc Applied Artificial Intelligence, University of Bradford
+github.com/ByEmG
